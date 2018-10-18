@@ -1,0 +1,166 @@
+__author__ = 'Sebastien Levy'
+
+from processing import ADOS_Data
+from cross_validation import CVP_Set
+from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
+from sklearn.svm import LinearSVC
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from classifiers import RegClassifier, BinClassifier
+from sklearn.metrics import roc_auc_score, average_precision_score, classification_report, confusion_matrix, precision_recall_curve, auc
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+MODULE = 'm2'
+FEATURE_SET = ['A3', 'A5', 'B1', 'B2', 'B10', 'age_months', 'male']
+# FEATURE_SET = ['A3', 'A5', 'B1', 'B2', 'B10']
+# FEATURE_SET = ['A3', 'A5', 'B1', 'B2', 'B10', 'male']
+
+# FEATURE_SET = ['A2', 'A4', 'A8', 'B3_miss', 'B2']
+# ['A2', 'A4', 'A8', 'B3_miss', 'B2']
+# 'B7', 'B8', 'D4', 'D3_miss', 'male']
+
+# FEATURE_SET = ['A2', 'A4', 'A8', 'B3_miss', 'B2', 'B7', 'B8', 'D4', 'D3_miss']
+# FEATURE_SET = ['A2', 'A4', 'A8', 'B3_miss', 'B2', 'B7', 'B8', 'D4', 'D3_miss', 'male']
+
+# FEATURE_SET = ['A2', 'A4', 'A8', 'B3_miss', 'B2', 'B7', 'B8', 'D4', 'D3_miss', 'male', 'age_months', 'ASD']
+
+
+N_FOLD = 10
+PRED_RATIO = 0.2
+SCALING_PARAM = 4
+# Binary or Replacement
+MISSING_VALUE_STRATEGY = 'Binary'
+# poly, linear, indicator, interaction_ind, pca_comp
+PROCESSING_STRATEGY = 'linear'
+
+POLY_DEGREE = 2
+NORMALIZE = True
+
+ADOS_FILE = MODULE+"/data/ados_"+MODULE+"_allData.csv"
+label_id = "ASD"
+label_age = "age_months"
+label_gender = "male"
+columns_to_delete = ["Subject.Id", "Diagnosis"]
+sub_diagnosis_id = ["social_affect_calc","restricted_repetitive_calc","SA_RRI_total_calc","severity_calc"]
+
+# We import the data
+data = ADOS_Data.read_csv(ADOS_FILE)
+sub_diagnosis = data[sub_diagnosis_id]
+
+# We drop the columns that are not interesting for us, and the row with no label
+data.select_good_columns(columns_to_delete+sub_diagnosis_id)
+
+print('gendering')
+print(data[data['ASD'] == 1][['male']]).sum()
+
+data.full_preprocessing(NORMALIZE, MISSING_VALUE_STRATEGY, PROCESSING_STRATEGY, [label_age], label_gender, label_id)
+if FEATURE_SET != []:
+    data.select_good_columns(FEATURE_SET, keep_the_column=True)
+
+cv_set = CVP_Set(data, data.labels, N_FOLD, PRED_RATIO)
+
+def test_func(pred_score, cv_set, name):
+    y_true = [int(v != 0) for v in list(cv_set.pred_labels)] #for new labels
+    # print y_true
+    # print pred_score
+    print('roc score')
+    print roc_auc_score([1-x for x in y_true], [1-x for x in pred_score])
+    cm = confusion_matrix([1-x for x in y_true], [1-int(x > 0.5) for x in pred_score])
+    print cm
+    print 'Precision: {}'.format(float(cm[0][0])/(cm[0][0]+cm[1][0]))
+    print 'Recall/Sensitivity: {}'.format(float(cm[0][0])/(cm[0][0]+cm[0][1]))
+    print 'Specificity: {}'.format(float(cm[1][1])/(cm[1][1]+cm[1][0]))
+    # print 'class report'
+    # print classification_report([1-x for x in y_true], [1-int(x > 0.5) for x in pred_score])
+    print 'average precision'
+    print average_precision_score(y_true, pred_score)
+    print 'average precision opp'
+    print average_precision_score([1-x for x in y_true], [1-x for x in pred_score])
+    # print average_precision_score([1-x for x in y_true], [1-x for x in pred_score], average = 'micro')
+    # print average_precision_score([1-x for x in y_true], [1-x for x in pred_score], average = 'macro')
+    # print average_precision_score([1-x for x in y_true], [1-x for x in pred_score], average = 'weighted')
+    # print average_precision_score([1-x for x in y_true], [1-x for x in pred_score], average = 'samples')
+
+
+    #plt.plot(pred_score, list(cv_set.pred_labels), 'bs')
+    # labels = pd.DataFrame()
+    # labels['sev'] = list(cv_set.pred_labels) #for new labels
+    # labels['pred_score'] = pred_score
+
+    # lab = ['Control', 'Spectrum', 'Autism']
+    # xrange = [min(pred_score)-0.2, max(pred_score)+0.2]
+
+    # for i in range(3):
+    #     plt.subplot(310+i+1)
+    #     plt.hist(list(labels.query('sev == '+str(i))['pred_score']), range=xrange, bins=30, label=lab[i])
+    # plt.ylabel("Number of values")
+    # plt.suptitle('Histograms or probabilities by label for {}'.format(name))
+    # plt.show()
+
+lm = RegClassifier(Ridge(alpha=2), severity=False, thres=0)
+lm.fit(cv_set.cv_feat, cv_set.cv_labels)
+lm_score = lm.predict_severity(cv_set.pred_feat)
+
+lr = BinClassifier(proc=LogisticRegression(C=1, penalty='l2',class_weight='balanced'), severity=False)
+lr.fit(cv_set.cv_feat, cv_set.cv_labels)
+lr_score = [x[1] for x in lr.predict_proba(cv_set.pred_feat)]
+lr_dec = lr.decision_function(cv_set.pred_feat)
+
+ld = BinClassifier(proc=LDA(shrinkage=0.8, priors=(0.029,0.931), solver="lsqr"), severity=False)
+ld.fit(cv_set.cv_feat, cv_set.cv_labels)
+ld_score = [x[1] for x in ld.predict_proba(cv_set.pred_feat)]
+
+svc = BinClassifier(proc = LinearSVC(penalty = 'l1', dual = False, C = .5), severity = False)
+svc.fit(cv_set.cv_feat, cv_set.cv_labels)
+svc_dec_vals = svc.decision_function(cv_set.pred_feat)
+
+
+# print('prec recall curve, svm')
+# print('1 pos')
+# y_true = [int(v != 0) for v in list(cv_set.pred_labels)]
+# precision, recall, thresholds = precision_recall_curve(y_true, svc_dec_vals)
+# print(auc(recall, precision))
+# print('0 pos')
+# precision, recall, thresholds = precision_recall_curve(y_true, svc_dec_vals, pos_label = 0)
+# print(auc(recall, precision))
+
+# print('prec recall curve, lda')
+# print('1 pos')
+# y_true = [int(v != 0) for v in list(cv_set.pred_labels)]
+# precision, recall, thresholds = precision_recall_curve(y_true, ld_score)
+# print(auc(recall, precision))
+# print('0 pos')
+# precision, recall, thresholds = precision_recall_curve(y_true, ld_score, pos_label = 0)
+# print(auc(recall, precision))
+
+# print('prec recall curve, logreg')
+# print('1 pos')
+# y_true = [int(v != 0) for v in list(cv_set.pred_labels)]
+# precision, recall, thresholds = precision_recall_curve(y_true, lr_score)
+# print(auc(recall, precision))
+# print('0 pos')
+# precision, recall, thresholds = precision_recall_curve(y_true, lr_score, pos_label = 0)
+# print(auc(recall, precision))
+
+
+
+print('lda')
+test_func(ld_score, cv_set, 'LDA')
+
+print('svc')
+test_func(svc_dec_vals, cv_set, 'SVC')
+
+print('lr')
+test_func(lr_score, cv_set, 'LR')
+
+# male_counts = [data[data['ASD'] == i]['male'].sum()/3 for i in range(3)]
+# tot_per_class = [len(data[data['ASD'] == i]['male']) for i in range(3)]
+# fem_counts = [tot - xy for tot, xy in zip(tot_per_class, male_counts)]
+
+# print(male_counts)
+# print((male_counts[0], sum(male_counts[1:])))
+# print(fem_counts)
+# print((fem_counts[0], sum(fem_counts[1:])))
+# print(tot_per_class)
+# print(sum(tot_per_class))

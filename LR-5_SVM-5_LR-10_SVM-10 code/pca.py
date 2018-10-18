@@ -1,0 +1,104 @@
+__author__ = 'Sebastien Levy'
+
+from processing import ADOS_Data
+from sklearn import decomposition, lda
+from cross_validation import CVP_Set
+import matplotlib.pyplot as plt
+import numpy as np
+
+NORMALIZE = True
+# Binary or Replacement
+MISSING_VALUE_STRATEGY = 'Binary'
+PROCESSING_STRATEGY = 'linear'
+SHOW_PCA = False
+SHOW_LDA = True
+
+ADOS_FILE = "m3/data/ados_m3_allData.csv"
+label_id = "ASD"
+label_age = "age_months"
+label_gender = "male"
+columns_to_delete = ["Subject.Id", "Diagnosis"]
+sub_diagnosis_id = ["social_affect_calc","restricted_repetitive_calc","SA_RRI_total_calc","severity_calc"]
+N_FOLD = 10
+PRED_RATIO = 0.2
+
+
+def subplot_pca(full_pc, comp1, comp2, subplot, style0='bs', style1='g^', style2='ro'):
+    plt.subplot(subplot)
+    plt.plot(full_pc[:,comp2][full_pc[:,-1] == 0], full_pc[:,comp1][full_pc[:,-1] == 0], style0,
+         full_pc[:,comp2][full_pc[:,-1] == 1], full_pc[:,comp1][full_pc[:,-1] == 1], style1,
+         full_pc[:,comp2][full_pc[:,-1] == 2], full_pc[:,comp1][full_pc[:,-1] == 2], style2)
+
+def direction_plot(algo, first_fig=1, show_coef=True, use_labels=False, direction_list=[(0,1)], subplot=230):
+    if use_labels:
+        pc = algo.fit_transform(ncv_set.cv_feat, ncv_set.cv_labels)
+    else:
+        pc = algo.fit_transform(data)
+    full_pc = np.zeros((pc.shape[0], pc.shape[1]+1))
+    full_pc[:,:-1] = pc
+    if use_labels:
+        full_pc[:,-1] = ncv_set.cv_labels
+    else:
+        full_pc[:,-1] = data.labels
+
+    n_subplots = (subplot/100) * ((subplot%100)/10)
+
+    for i in range(len(direction_list)/n_subplots+1):
+        plt.figure(first_fig+i)
+        for j,(x,y) in enumerate(direction_list[(n_subplots*i):(n_subplots*(i+1))]):
+            subplot_pca(full_pc, x, y, (subplot+j))
+
+    if show_coef:
+        plt.figure(first_fig+(len(direction_list)/n_subplots+1))
+        plt.subplot(221)
+        plt.bar(list(range(pca.components_.shape[1])), pca.components_[0,:], color="black")
+        plt.subplot(223)
+        plt.bar(list(range(pca.components_.shape[1])), pca.components_[2,:], color="red")
+        plt.subplot(222)
+        plt.bar(list(range(pca.components_.shape[1])), pca.components_[1,:])
+        plt.subplot(224)
+        plt.bar(list(range(pca.components_.shape[1])), pca.components_[3,:], color="green")
+
+def pca_plot(pca, first_fig=1, show_coef=True, subplot=320,
+             direction_list = [(x,y) for x in range(0,4) for y in range(x+1,5)]):
+    direction_plot(pca, first_fig=first_fig, show_coef=show_coef,
+                   use_labels=False, direction_list=direction_list, subplot=subplot)
+
+def lda_plot(lda, first_fig=1, show_coef=False, direction_list = [(0,1)], subplot=110):
+    direction_plot(lda, first_fig=first_fig, show_coef=show_coef,
+                   use_labels=True, direction_list=direction_list, subplot=subplot)
+
+# We import the data
+data = ADOS_Data.read_csv(ADOS_FILE)
+sub_diagnosis = data[sub_diagnosis_id]
+
+# We drop the columns that are not interesting for us, and the row with no label
+data.select_good_columns(columns_to_delete+sub_diagnosis_id)
+
+data.full_preprocessing(NORMALIZE, MISSING_VALUE_STRATEGY, PROCESSING_STRATEGY, label_age, label_gender, label_id)
+
+ncv_set = CVP_Set(data, data.labels, N_FOLD, PRED_RATIO)
+
+pca = decomposition.PCA()
+spca = decomposition.SparsePCA(alpha=0.02)
+kpca = decomposition.KernelPCA(kernel='cosine')
+kpca2 = decomposition.KernelPCA(kernel='sigmoid')
+lda = lda.LDA(priors=(29, 275, 638), solver="svd")
+
+
+if SHOW_PCA:
+    pca_plot(pca, 1)
+
+    plt.figure(4)
+    plt.plot(pca.explained_variance_ratio_)
+
+    pca_plot(spca, 5)
+
+    pca_plot(kpca, 8, show_coef=False)
+
+    pca_plot(kpca2, 10, show_coef=False)
+
+if SHOW_LDA:
+    lda_plot(lda, 12, subplot=110)
+
+plt.show()

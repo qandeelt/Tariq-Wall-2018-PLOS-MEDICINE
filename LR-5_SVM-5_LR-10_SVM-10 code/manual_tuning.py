@@ -1,0 +1,79 @@
+__author__ = 'Sebastien Levy'
+
+from classifiers import RegClassifier, BinClassifier, ShrunkenCentroidClassifier
+from sklearn import linear_model
+
+alphas = [0.1,0.2,0.3,0.5,0.8,1,1.5]
+l1_ratios =[0.3, 0.5, 0.8]
+Cs_log_reg = [0.01,0.05,0.1,0.3,0.5,0.8,1,1.5,2,3,5,10,15,20,25,50]
+shr_coefs = [0.01,0.1,0.5,0.8,1,1.2,1.3,1.5,2]
+
+def tuning(cvp_set, ncv_set, LASSO, E_NET, LOG_REG, NSC, sev_thres):
+    for alpha_ in alphas:
+        print('Alpha = {}'.format(alpha_))
+        if LASSO:
+            print('Accuracy for Lasso with severity')
+            lasso_res = cvp_set.perform_CV(RegClassifier(reg=linear_model.Lasso(alpha= alpha_),
+                                           severity=True, thres=sev_thres))
+            print(lasso_res)
+            print(lasso_res.getFeatures())
+            print('Accuracy for Lasso without severity')
+            lasso_res = cvp_set.perform_CV(RegClassifier(reg=linear_model.Lasso(alpha= alpha_)))
+            print(lasso_res)
+            print(lasso_res.getFeatures())
+        if E_NET:
+            for rat_ in l1_ratios:
+                print('Accuracy for Elastic Net with l1 ratio of {}'.format(rat_))
+                enet_res = cvp_set.perform_CV(RegClassifier(severity=True, thres=sev_thres,
+                                              reg=linear_model.ElasticNet(alpha= alpha_, l1_ratio= rat_)))
+                print(enet_res)
+                print(enet_res.getFeatures())
+        print('\n')
+    if LOG_REG:
+        for c_ in Cs_log_reg:
+            print('C = {}'.format(c_))
+            print('Accuracy for Logistic Regression L1')
+            log_reg = cvp_set.perform_CV(BinClassifier(proc=linear_model.LogisticRegression(C=c_, penalty='l1')))
+            print(log_reg)
+            print(log_reg.getFeatures())
+            print('Accuracy for Logistic Regression L1 (with severity)')
+            log_reg = cvp_set.perform_CV(BinClassifier(severity=True,
+                                         proc=linear_model.LogisticRegression(C=c_, penalty='l1')))
+            print(log_reg)
+            print(log_reg.getFeatures())
+            #print log_reg.getFeatures()
+            print('Accuracy for Logistic Regression L2')
+            log_reg = cvp_set.perform_CV(BinClassifier(proc=linear_model.LogisticRegression(C=c_, penalty='l2')))
+            print(log_reg)
+            print('\n')
+
+            print('C = {}'.format(c_))
+            print('Accuracy for Logistic Regression L1 NCV')
+            log_reg = ncv_set.perform_CV(BinClassifier(proc=linear_model.LogisticRegression(C=c_, penalty='l1',
+                                         class_weight='balanced')))
+            print(log_reg)
+            print(log_reg.getFeatures())
+            print('Accuracy for Logistic Regression L1 (with severity) NCV')
+            log_reg = ncv_set.perform_CV(BinClassifier(severity=True, proc=linear_model.LogisticRegression(C=c_, penalty='l1',
+                                         class_weight='balanced')))
+            print(log_reg)
+            print(log_reg.getFeatures())
+            #print log_reg.getFeatures()
+            print('Accuracy for Logistic Regression L2 NCV')
+            log_reg = ncv_set.perform_CV(BinClassifier(proc=linear_model.LogisticRegression(C=c_, penalty='l2',
+                                         class_weight='balanced')))
+            print(log_reg)
+            print('\n')
+    if NSC:
+        for sc_ in shr_coefs:
+            print('Shrinkage threshold = {}'.format(sc_))
+            shr = cvp_set.perform_CV(BinClassifier(proc=ShrunkenCentroidClassifier(shrink_threshold=sc_)))
+            print(shr)
+            print(shr.getFeatures())
+            print('\n')
+
+            print('Shrinkage threshold = {}, with severity'.format(sc_))
+            shr = cvp_set.perform_CV(BinClassifier( proc=ShrunkenCentroidClassifier(shrink_threshold=sc_),severity=True))
+            print(shr)
+            print(shr.getFeatures())
+            print('\n')

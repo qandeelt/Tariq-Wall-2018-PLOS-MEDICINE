@@ -1,0 +1,380 @@
+__author__ = 'Sebastien Levy'
+
+import numpy as np
+from sklearn import neighbors
+from sklearn import linear_model
+from math import fabs
+
+import abc
+
+
+class Classifier(object):
+    __metaclass__ = abc.ABCMeta
+
+    def __init__(self):
+        pass
+
+    @abc.abstractmethod
+    def fit(self, x, y):
+        return
+
+    @abc.abstractmethod
+    def predict(self, x):
+        return
+
+    @abc.abstractmethod
+    def predict_proba(self, x):
+        return
+
+    @abc.abstractmethod
+    def get_params(self, **kwargs):
+        return
+
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+
+class SelClassifier(Classifier):
+    def __init__(self, sel, cl, has_coefs=False):
+        self.sel = sel
+        self.cl = cl
+        self.has_coefs = has_coefs
+
+    def fit(self, x, y):
+        x_red = self.sel.fit_transform(x,y)
+        self.cl.fit(x_red, y)
+        if self.has_coefs:
+            self.coef_ = self.coefs()
+        else:
+            self.coef_ = self.sel.inverse_transform(np.ones(x_red.shape[1]))
+
+
+    def predict(self, x):
+        x_red = self.sel.transform(x)
+        return self.cl.predict(x_red)
+
+    def predict_proba(self, x):
+        x_red = self.sel.transform(x)
+        return self.cl.predict_proba(x_red)
+
+    def get_params(self, **kwargs):
+        params = {}
+        params['sel'] = self.sel
+        params['cl'] = self.cl
+        params['has_coefs'] = self.has_coefs
+        return params
+
+    def set_params(self, **parameters):
+        del_keys = []
+        for key in parameters.iterkeys():
+            if 'sel__' in key:
+                param = '__'.join(key.split('__')[1:])
+                self.sel.set_params(**{param: parameters[key]})
+                del_keys.append(key)
+            if 'cl__' in key:
+                param = '__'.join(key.split('__')[1:])
+                self.cl.set_params(**{param: parameters[key]})
+                del_keys.append(key)
+        for key in del_keys:
+            del parameters[key]
+        super(SelClassifier, self).set_params(**parameters)
+
+    def coefs(self):
+        return self.sel.inverse_transform(self.cl.coef_.reshape(1,-1))
+
+class AllZeroClassifier(Classifier):
+    """ Classifier always choosing the first label (0), useful to know how your data are balanced / to compare with
+    other algorithms
+    """
+
+    def __init__(self):
+        """
+        The nbLabels should be changed if we do multimodal classification
+        It is useful only if we want to use the predict_proba function
+        :return: the zero classifier instance
+        """
+        self.nbLabels = 2
+
+    def fit(self, x, y):
+        """
+        Trains the classifier (update the number of labels)
+        :param x: the training data
+        :param y: the training labels
+        :return: Nothing (classifier trained in place)
+        """
+        self.nbLabels = len(set(y))
+        self.nbFeat = x.shape[1]
+
+    def predict(self, x):
+        """
+        :param x: test data
+        :return: the test labels predicted by the classifier
+        """
+        size = x.shape[0]
+        return -np.ones(size)
+
+    def predict_proba(self, x):
+        """
+        :param x: the test data
+        :return: the matrix of probability for each test point to have each label
+        """
+        result = np.zeros((x.shape[0],self.nbLabels))
+        for i in range(x.shape[0]):
+            result[i,0] = 1
+        return result
+
+    def get_params(self, **kwargs):
+        return {}
+
+class RegClassifier(Classifier):
+    """ Discrete classifier created with a regression classifier
+    """
+
+    def __init__(self, reg, thres= 0., severity=False):
+        self.reg = reg
+        self.thres = thres
+        self.severity = severity
+
+    def fit(self, x, y):
+        """
+        Fit the data to the classifier, ie fit the value in the classifier, changing the 0 in -1
+        :param x: training data
+        :param y: training labels (0 and 1)
+        :return: Nothing (in place)
+        """
+        if self.severity:
+            z= [v*2-1 for v in y]
+            self.reg.fit(x,z)
+            self.coef_ = self.reg.coef_
+        else:
+            z= [int(v!=0)*2-1 for v in y]
+            self.reg.fit(x,z)
+            self.coef_ = self.reg.coef_
+
+    def predict(self, x):
+        """
+        Predict the labels for the data given
+        :param x: test data
+        :return: the predicted label by taking the sign on the regression
+        """
+        result = self.reg.predict(x)
+        return np.asarray([int(x >= self.thres) for x in result])
+
+    def predict_severity(self, x):
+        return self.reg.predict(x)
+
+    def predict_proba(self, x):
+        """
+        Gives the probability for each point to have each label,
+         by taking the value given by regression and give a 1 probability if it is over 1 or under -1,
+         and a probability linear on the closeness to 1 and -1 otherwise
+        :param x: the test data
+        :return: the probability matrix
+        """
+        predict = self.reg.predict(x)
+        result = np.zeros((x.shape[0],2))
+        for i in range(x.shape[0]):
+            if predict[i] < -1+self.thres:
+                result[i,0] = 1
+            elif predict[i] > 1+self.thres:
+                result[i,1] = 1
+            else:
+                result[i,1] = float(predict[i]+1+self.thres)/2
+                result[i,0] = 1 - float(predict[i]+1+self.thres)/2
+        return result
+
+
+    def get_params(self, **kwargs):
+        params = {}
+        params['reg'] = self.reg
+        params['thres'] = self.thres
+        params['severity'] = self.severity
+        return params
+
+    def set_params(self, **parameters):
+        del_keys = []
+        for key in parameters.iterkeys():
+            if 'reg__' in key:
+                param = '__'.join(key.split('__')[1:])
+                self.reg.set_params(**{param: parameters[key]})
+                del_keys.append(key)
+        for key in del_keys:
+            del parameters[key]
+        super(RegClassifier, self).set_params(**parameters)
+
+
+    def coefs(self):
+        return self.coef_
+
+class RelaxedLinear(RegClassifier):
+    def __init__(self, first_reg, **kwargs):
+        self.first_reg = first_reg
+        super(RelaxedLinear, self).__init__(**kwargs)
+
+    def fit(self, x, y):
+        self.first_reg.fit(x,y)
+        self.n_feat = x.shape[1]
+        self.non_zero = [idx for idx, coef in enumerate(self.first_reg.coef_) if coef != 0]
+        if len(self.non_zero) == 0:
+            super(RelaxedLinear, self).fit(np.ones((len(y),1)), y)
+        else:
+            super(RelaxedLinear, self).fit(x[:,self.non_zero], y)
+
+    def predict(self, x):
+        if len(self.non_zero) == 0:
+            return super(RelaxedLinear, self).predict(np.ones((x.shape[0],1)))
+        return super(RelaxedLinear, self).predict(x[:,self.non_zero])
+
+    def predict_proba(self, x):
+        if len(self.non_zero) == 0:
+            return super(RelaxedLinear, self).predict_proba(np.ones((x.shape[0],1)))
+        return super(RelaxedLinear, self).predict_proba(x[:,self.non_zero])
+
+    def get_params(self, **kwargs):
+        #params = self.proc.get_params(**kwargs)
+        params = super(RelaxedLinear,self).get_params(**kwargs)
+        params['first_reg'] = self.first_reg
+        return params
+
+    def set_params(self, **parameters):
+        first_reg_params = {}
+        del_keys=[]
+        for param, val in parameters.iteritems():
+            if 'first_reg__' in param:
+                first_reg_params['__'.join(param.split('__')[1:])] = val
+                del_keys.append(param)
+        for key in del_keys:
+            del parameters[key]
+        super(RelaxedLinear, self).set_params(**parameters)
+        self.first_reg.set_params(**first_reg_params)
+
+    def coefs(self):
+        coefs = np.zeros(self.n_feat)
+        sec_pred_coefs = super(RelaxedLinear,self).coefs()
+        for i,idx in enumerate(self.non_zero):
+            coefs[idx] = sec_pred_coefs[i]
+        return coefs
+
+class BinClassifier(Classifier):
+    """ Discrete classifier created with a regression classifier
+    """
+
+    def __init__(self, proc, severity=False):
+        self.proc = proc
+        self.severity = severity
+
+    def fit(self, x, y):
+        """
+        Fit the data to the classifier, ie fit the value in the classifier, changing the 0 in -1
+        :param x: training data
+        :param y: training labels (0 and 1)
+        :return: Nothing (in place)
+        """
+        if self.severity:
+            self.proc.fit(x,y)
+        else:
+            self.proc.fit(x,[int(v!=0) for v in y])
+        if hasattr(self.proc, "coef_"):
+            self.coef_ = self.proc.coef_
+        elif hasattr(self.proc, "feature_importances_"):
+            self.coef_ = self.proc.feature_importances_
+
+    def predict(self, x):
+        """
+        Predict the labels for the data given
+        :param x: test data
+        :return: the predicted label by taking the sign on the regression
+        """
+        result = self.proc.predict(x)
+        if self.severity:
+            return np.asarray([int(x != 0) for x in result])
+        return result
+
+    def predict_proba(self, x):
+        """
+        Gives the probability for each point to have each label,
+         by taking the value given by regression and give a 1 probability if it is over 1 or under -1,
+         and a probability linear on the closeness to 1 and -1 otherwise
+        :param x: the test data
+        :return: the probability matrix
+        """
+        if self.severity:
+            proba = self.proc.predict_proba(x)
+            proba[:,1] += proba[:,2]
+            return proba[:,:1]
+        if not hasattr(self.proc, 'predict_proba'):
+            return self.proc.decision_function(x)
+        return self.proc.predict_proba(x)
+
+    def decision_function(self, x):
+        return self.proc.decision_function(x)
+
+    def predict_proba_sev(self, x):
+        return self.proc.predict_proba(x)
+
+    def coefs(self):
+        return self.coef_
+
+    def get_params(self, **kwargs):
+        #params = self.proc.get_params(**kwargs)
+        params = {}
+        params['severity'] = self.severity
+        params['proc'] = self.proc
+        return params
+
+    def set_params(self, **parameters):
+        del_keys = []
+        for key in parameters.iterkeys():
+            if 'proc__' in key:
+                param = '__'.join(key.split('__')[1:])
+                self.proc.set_params(**{param: parameters[key]})
+                del_keys.append(key)
+        for key in del_keys:
+            del parameters[key]
+        super(BinClassifier, self).set_params(**parameters)
+
+class ShrunkenCentroidClassifier(Classifier):
+    """ Discrete classifier created with a regression classifier
+    """
+
+    def __init__(self, **kwargs):
+        self.classifier = neighbors.NearestCentroid(**kwargs)
+
+    def fit(self, x, y):
+        """
+        Fit the data to the classifier, ie fit the value in the classifier, creates the coefficient vector
+        :param x: training data
+        :param y: training labels (0 and 1)
+        :return: Nothing (in place)
+        """
+
+        self.classifier.fit(x,y)
+        coefs = self.classifier.centroids_
+        self.coef_ = np.array([coefs[0,i]-coefs[1,i] for i in range(coefs.shape[1])])
+
+    def predict(self, x):
+        """
+        Predict the labels for the data given
+        :param x: test data
+        :return: the predicted label
+        """
+        return self.classifier.predict(x)
+
+    def predict_proba(self, x):
+        """
+        Not Implemented
+        :param x: the test data
+        :return: None
+        """
+        return self.classifier.decision_function(x)
+
+    def get_params(self, **kwargs):
+        params = self.classifier.get_params(**kwargs)
+        return params
+
+    def set_params(self, **parameters):
+        self.classifier.set_params(**parameters)
+
+    def coefs(self):
+        return self.coef_

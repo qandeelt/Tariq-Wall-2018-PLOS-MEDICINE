@@ -1,0 +1,139 @@
+__author__ = 'Sebastien Levy'
+
+import pandas as pd
+import numpy as np
+from cross_validation import CVP_Set
+from processing import ADOS_Data
+from sklearn import linear_model, ensemble, tree, lda, svm
+from classifiers import RegClassifier, ShrunkenCentroidClassifier, BinClassifier, RelaxedLinear
+from manual_tuning import tuning
+
+
+N_FOLD = 10
+PRED_RATIO = 0.2
+SCALING_PARAM = 4
+# Binary or Replacement
+MISSING_VALUE_STRATEGY = 'Binary'
+# poly, linear, indicator, interaction_ind, 'pca_comp'
+PROCESSING_STRATEGY = 'linear'
+
+POLY_DEGREE = 2
+NORMALIZE = True
+
+TUNING = False
+LASSO = False
+E_NET = False
+LOG_REG = True
+NSC = False
+
+SEV_THRES = 0.75
+
+ADOS_FILE = "m2/data/ados_m2_allData.csv"
+label_id = "ASD"
+label_age = "age_months"
+label_gender = "male"
+columns_to_delete = ["Subject.Id", "Diagnosis"]
+sub_diagnosis_id = ["social_affect_calc","restricted_repetitive_calc","SA_RRI_total_calc","severity_calc"]
+
+# We import the data
+data = ADOS_Data.read_csv(ADOS_FILE)
+sub_diagnosis = data[sub_diagnosis_id]
+
+# We drop the columns that are not interesting for us, and the row with no label
+data.select_good_columns(columns_to_delete+sub_diagnosis_id)
+
+# We do the full preprocessing
+data.full_preprocessing(NORMALIZE, MISSING_VALUE_STRATEGY, PROCESSING_STRATEGY, label_age, label_gender, label_id)
+
+# We create the Cross-Validation + Prediction error set
+cvp_set = CVP_Set(data, data.labels, N_FOLD, PRED_RATIO)
+cvp_set.undersampling_cv_set(ratio=1, sampling_type="random")
+
+ncv_set = CVP_Set(data, data.labels, N_FOLD, PRED_RATIO)
+
+cvp_set.printLabelCount()
+
+others = set(data.columns).difference(set(['A2', 'A4', 'A8', 'B3_miss', 'B2', 'B7', 'B8', 'D4', 'D3_miss', 'male']))
+print list(others)
+cors = data.corr().loc[list(x for x in others if not 'miss' in x),['A2', 'A4', 'A8', 'B3_miss', 'B2', 'B7', 'B8', 'D4', 'D3_miss', 'male']]
+print cors
+# print np.mean(data.corr())
+
+for idx, row in cors.iterrows():
+  # print row
+  print idx+'&'+'&'.join(map(lambda x: str(x)[:5],row))+'\\\\'
+
+
+# We check the accuracies for different parameters in the cross validation
+#print cvp_set.perform_CV(AllZeroClassifier, sparse=False)
+print cvp_set.perform_CV(RegClassifier(reg=linear_model.LinearRegression()), sparse=False)
+print cvp_set.perform_CV(RegClassifier(reg=linear_model.LinearRegression(),
+                         severity=True, thres=SEV_THRES), sparse=False)
+
+if TUNING:
+    tuning(cvp_set, ncv_set, LASSO, E_NET, LOG_REG, NSC, SEV_THRES)
+
+
+
+
+print 'Tree'
+best_tree = ncv_set.perform_CV(BinClassifier(severity=False,
+                               proc=tree.DecisionTreeClassifier( criterion="entropy", class_weight='auto')), sparse=False)
+print best_tree
+
+best_tree = ncv_set.perform_CV(BinClassifier(severity=False,
+                               proc=tree.DecisionTreeClassifier(criterion="gini", class_weight='auto')), sparse=False)
+print best_tree
+print 'Forest'
+best_tree = ncv_set.perform_CV(BinClassifier(severity=False,
+                               proc=ensemble.RandomForestClassifier(criterion="entropy", class_weight='auto')), sparse=False)
+print best_tree
+
+best_tree = ncv_set.perform_CV(BinClassifier(severity=False,
+                               proc=ensemble.RandomForestClassifier(criterion="gini", class_weight='auto')), sparse=False)
+print best_tree
+
+
+best_res = cvp_set.perform_CV(RelaxedLinear(reg=linear_model.Lasso(alpha=0.1), first_reg=linear_model.Lasso(alpha=0.2),
+                              severity=True, thres=0.75))
+print best_res
+print best_res.getFeatures()
+
+print 'Best Lasso:'
+best_res = cvp_set.perform_CV(RegClassifier(reg=linear_model.Lasso(alpha=0.2),
+                              severity=True, thres=0.75), make_plot=True)
+print best_res
+print best_res.getFeatures()
+#best_res.plot_severity()
+
+print 'Best Elastic Net:'
+best_res = cvp_set.perform_CV(RegClassifier(reg=linear_model.ElasticNet(alpha=1.5, l1_ratio= 0.2),
+                              severity=True, thres=0.75), make_plot=True)
+print best_res
+print best_res.getFeatures()
+#best_res.plot_severity()
+
+print 'Best Logistic Regression:'
+best_logr = ncv_set.perform_CV(BinClassifier(proc=linear_model.LogisticRegression(C=2, penalty='l1',
+                                                                                   class_weight='auto')))
+print best_logr
+print best_logr.getFeatures()
+
+print 'Best Nearest Shrunken Centroids:'
+best_nsc = cvp_set.perform_CV(BinClassifier(proc=ShrunkenCentroidClassifier(shrink_threshold=1.1, metric='euclidean')))
+print best_nsc
+print best_nsc.getFeatures()
+
+print 'Best LDA:'
+best_lda = ncv_set.perform_CV(BinClassifier(proc=lda.LDA(shrinkage=0.8, priors=(0.029,0.961), solver="lsqr")))
+print best_lda
+print best_lda.getFeatures()
+
+print 'Best SVM:'
+best_svm = ncv_set.perform_CV(BinClassifier(proc=svm.SVC(kernel="linear", C=0.005, class_weight='auto'), severity=True))
+print best_svm
+print best_svm.getFeatures()
+
+#print data.describe()
+
+

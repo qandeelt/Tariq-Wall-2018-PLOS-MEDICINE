@@ -1,0 +1,62 @@
+__author__ = 'Sebastien Levy'
+
+from sklearn.tree import DecisionTreeClassifier
+
+class ClassifierResult(object):
+    def __init__(self, name, put_auc=False):
+        self.name = name
+        self.get_info(put_auc=put_auc)
+        self.get_best_params()
+
+    def get_path(self):
+        return self.directory + self.name+'/'+'_'.join([s.lower() for s in self.name.split() if s != '-'])
+
+    def get_summary_file(self):
+        return self.get_path()+'_'+self.summary_name+'.txt'
+
+    def get_info(self, put_auc=False):
+        with open(self.get_summary_file()) as reader:
+            for line in reader:
+                if line[0] == '(':
+                    info = line.split(',')
+                    self.AUC = float((info[3].split('='))[1])
+                if line[:9] == 'Counter({':
+                    self.feats = {txt.split(':')[0][1:-1]: int(txt.split(':')[1]) for txt in line[9:-2].split(', ')}
+                    if max(self.feats.values()) > 10:
+                        self.feats = {k:v/10 for k,v in self.feats.items()}
+                    if put_auc:
+                        self.feats['AUC'] = self.AUC
+
+    def get_best_params(self):
+        with open(self.get_summary_file()) as reader:
+            inside = False
+            param_string = ''
+            for line in reader:
+                if line[:7] == ' with {':
+                    inside = True
+                    line = line[7:]
+                if inside and '}' in line:
+                    param_string += line.split('}')[0].lstrip()
+                    break
+                if inside:
+                    param_string += line.lstrip()
+            reader.close()
+        param_string = ' '.join(param_string.split('\n'))
+        param_list = []
+        print(param_string, 'yaa')
+        for param in param_string.split(','):
+            if ':' in param:
+                param_list.append(param.split(':'))
+            else:
+                param_list[-1][1] += ','+param
+
+        self.params = {eval(k): eval(v) for (k,v) in param_list}
+
+    def __repr__(self):
+        return self.name
+
+    @classmethod
+    def init_param(cl, directory, summary_name):
+        cl.directory = directory
+        cl.summary_name = summary_name
+

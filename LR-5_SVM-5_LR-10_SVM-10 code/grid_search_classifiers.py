@@ -1,0 +1,241 @@
+__author__ = 'Sebastien Levy'
+
+
+from sklearn import linear_model, ensemble, tree, discriminant_analysis, svm, feature_selection
+from classifiers import RegClassifier, ShrunkenCentroidClassifier, BinClassifier, RelaxedLinear, SelClassifier
+from feature_selection import LassoSelection, NoSelection, TreeSelection
+
+N_FEAT = [4, 5, 6, 7, 8, 10, 12, 15, 17, 20, 25]
+#N_FEAT = [3, 4, 5, 6, 7, 8, 9]
+
+def get_sparse_classifiers(ncv_set, cvp_set):
+    return {
+        'L1 Logistic Regression':
+            (
+                {'proc__C': [0.001,0.01,0.05,0.1,0.3,0.5,0.8,1,1.5,2,3,5,10,15,20,25,50],
+                   'severity': [True, False]},
+                BinClassifier(linear_model.LogisticRegression(penalty='l1',class_weight='balanced')),
+                ncv_set, True, 'proc__C'
+            ),
+        'L2 Logistic Regression':
+            (
+                {'proc__C': [0.001,0.01,0.05,0.1,0.3,0.5,0.8,1,1.5,2,3,5,10,15,20,25,50],
+                   'severity': [True, False]},
+                BinClassifier(linear_model.LogisticRegression(penalty='l2',class_weight='balanced')),
+                ncv_set, True, 'proc__C'
+            ),
+        'Lasso':
+            (
+                {'reg__alpha': [2,1.5,1,0.8,0.7,0.5,0.3,0.2,0.1,0.01],
+                 'severity': [True, False],
+                 'thres': [0, 0.2, 0.75, 0.8, 0.85, 0.9, 0.95]},
+                RegClassifier(linear_model.Lasso()),
+                cvp_set, True, 'reg__alpha'
+            ),
+        'Linear Regression':
+            (
+                {'severity': [True, False],
+                 'thres': [0]},
+                RegClassifier(linear_model.LinearRegression()),
+                cvp_set, True, 'thres'
+            ),
+        'Ridge':
+            (
+                {'reg__alpha': [2,1.5,1,0.8,0.7,0.5,0.3,0.2,0.1,0.01],
+                 'severity': [True, False],
+                 'thres': [0, 0.2, 0.75, 0.8, 0.85, 0.9, 0.95]},
+                RegClassifier(linear_model.Ridge()),
+                cvp_set, True, 'reg__alpha'
+            ),
+        'Relaxed Lasso':
+            (
+                {'reg__alpha': [0.005,0.01,0.1,0.2,0.5],
+                 'severity': [True, False],
+                 'thres': [0, 0.4, 0.6, 0.75],
+                 'first_reg__reg__alpha': [1,0.5,0.2,0.1,0.01],
+                 'first_reg__severity': [False],
+                 'first_reg__thres': [0,0.2,0.75]
+                 },
+                RelaxedLinear(first_reg=RegClassifier(reg=linear_model.Lasso()), reg=linear_model.Lasso()),
+                cvp_set, True, 'first_reg__reg__alpha'
+            ),
+        'Elastic Net':
+            (
+                {'reg__alpha': [2,1.5,1,0.8,0.7,0.5,0.3,0.2,0.1,0.01],
+                 'severity': [True, False],
+                 'thres': [0, 0.75, 0.85, 0.9, 0.95],
+                 'reg__l1_ratio': [0.2,0.4,0.5,0.6,0.7,0.8]},
+                RegClassifier(linear_model.ElasticNet()),
+                cvp_set, True, 'reg__alpha'
+            ),
+        'Shrunken Centroids OCV':
+            (
+                {'proc__shrink_threshold': [2,1.5,1.3,1.2,1.1,1,0.8,0.5,0.1,0.01],
+                 'proc__metric': ['euclidean', 'manhattan', 'cosine'],
+                 'severity': [False]},
+                BinClassifier(ShrunkenCentroidClassifier()),
+                ncv_set, True, 'proc__shrink_threshold'
+            ),
+        'Shrunken Centroids UCV':
+            (
+                {'proc__shrink_threshold': [2,1.5,1.3,1.2,1.1,1,0.8,0.5,0.1,0.01],
+                 'proc__metric': ['euclidean', 'manhattan', 'cosine'],
+                 'severity': [False]},
+                BinClassifier(ShrunkenCentroidClassifier()),
+                cvp_set, True, 'proc__shrink_threshold'
+            ),
+        'SVM enet':
+            (
+                {'proc__loss': ['modified_huber'],
+                 'proc__alpha': [2,1,0.5,0.4,0.2,0.1,0.05],
+                 'proc__l1_ratio': [0.1, 0.2,0.3, 0.5]},
+                BinClassifier(linear_model.SGDClassifier(penalty='elasticnet', class_weight='balanced')),
+                ncv_set, True, 'proc__alpha'
+            ),
+        'L1 Linear SVM':
+            (
+                {'proc__C': [0.0000001,0.001,0.01,0.5,0.7,0.1,0.2,0.5,1,1.5,2]},
+                BinClassifier(svm.LinearSVC(penalty='l1', dual=False, class_weight='balanced')),
+                ncv_set, True, 'proc__C'
+            )
+    }
+
+def get_non_sparse_classifiers(ncv_set, cvp_set):
+    return {
+        'SVM':
+            (
+                {'proc__kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+                 'proc__C': [0.0000001,0.001,0.005,0.01,0.1,1],
+                 'severity': [True, False]
+                 },
+                BinClassifier(svm.SVC(class_weight='balanced', probability=True)),
+                ncv_set, False, 'proc__C'
+            ),
+        'AdaBoost':
+            (
+                {'proc__base_estimator': [tree.DecisionTreeClassifier(class_weight='balanced', max_depth=5, min_samples_leaf=1),
+                                    tree.DecisionTreeClassifier(class_weight='balanced', max_depth=1, min_samples_leaf=1)],
+                 'proc__learning_rate': [0.01,0.1,0.2,0.5,0.8,1,2],
+                 'proc__n_estimators': [20,50,80,100,150]
+                 },
+                BinClassifier(ensemble.AdaBoostClassifier(), severity=False),
+                ncv_set, True, 'proc__n_estimators'
+            ),
+        'AdaBoost on Stumps':
+            (
+                {'proc__base_estimator': [tree.DecisionTreeClassifier(
+                    class_weight='balanced', max_depth=1, min_samples_leaf=1)],
+                 #'proc__learning_rate': [0.1,0.2,0.5,0.8,1],
+                 'proc__n_estimators': [5, 10, 15, 20, 50]
+                 },
+                BinClassifier(ensemble.AdaBoostClassifier(), severity=False),
+                ncv_set, True, 'proc__n_estimators'
+            ),
+        'Gradient Boosting':
+            (
+                {'proc__n_estimators': [5,20,50,100],
+                 'proc__max_depth': [1,3],
+                 'proc__subsample': [1]},
+                BinClassifier(ensemble.GradientBoostingClassifier(loss='deviance'), severity=False),
+                ncv_set, True, 'proc__max_depth'
+            ),
+        'Radial SVM':
+            (
+                {'gamma': [0.01,0.1,1,2,10,20,50],
+                 'proc__C': [0.0000001,0.001,0.005,0.01,0.1,1],
+                 'severity': [True, False]
+                 },
+                BinClassifier(svm.SVC(kernel='rbf', class_weight='balanced', probability=True)),
+                ncv_set, False, 'proc__C'
+            ),
+        'Exponential SVM':
+            (
+                {'gamma': [0.01,0.1,1,2,10,20,50],
+                 'proc__C': [0.0000001,0.001,0.005,0.01,0.1,1],
+                 'severity': [True, False]
+                 },
+                BinClassifier(svm.SVC(kernel='sigmoid', class_weight='balanced', probability=True)),
+                ncv_set, False, 'proc__C'
+            ),
+            'Polynomial SVM':
+            (
+                {'gamma': [0.01,0.1,1,2,10,20,50],
+                 'proc__C': [0.0000001,0.001,0.005,0.01,0.1,1],
+                 'severity': [True, False]
+                 },
+                BinClassifier(svm.SVC(kernel='poly', class_weight='balanced', probability=True)),
+                ncv_set, False, 'proc__C'
+            ),
+        'LinearDiscriminantAnalysis':
+            (
+                {'proc__shrinkage': [0.9,0.8,0.7,0.5,0.3,0.2,0.1,0.01],
+                 'severity': [False]
+                 },
+                BinClassifier(discriminant_analysis.LinearDiscriminantAnalysis(priors=(0.029,0.931), solver="lsqr")),
+                ncv_set, True, 'proc__shrinkage'
+            ),
+        'Tree':
+            (
+                {'proc__criterion': ['gini', 'entropy'],
+                 'proc__max_depth': [2,3,4,5,7,10,15,20,30],
+                 'severity': [True, False]},
+                BinClassifier(
+                    tree.DecisionTreeClassifier(class_weight='balanced',min_samples_leaf=4)
+                              ),
+                ncv_set, True, 'proc__max_depth'
+            ),
+        'Random Forest':
+            (
+                {'proc__criterion': ['gini', 'entropy'],
+                 'proc__max_depth': [2,3,4,5,7,10,15,20,30],
+                 'severity': [True, False]},
+                BinClassifier(
+                    ensemble.RandomForestClassifier(class_weight='balanced',min_samples_leaf=4)
+                              ),
+                ncv_set, True, 'proc__max_depth'
+            )
+    }
+
+def get_fs_procedures(ease_score=None):
+    return {
+        'Lasso':
+            (
+                {'alpha': [2,1,0.5,0.2,0.1,0.05,0.01]},
+                LassoSelection(), 'alpha'
+            ),
+        'ANOVA':
+            (
+                {'k': N_FEAT},
+                 feature_selection.SelectKBest(feature_selection.f_classif), 'k'
+            ),
+        'Tree':
+            (
+                {'k': N_FEAT},
+                TreeSelection(tree.DecisionTreeClassifier(class_weight='balanced'), type='best', ease_score=ease_score),
+                'k'
+            ),
+        'NS':
+            (
+                {}, NoSelection(), None
+            )
+    }
+
+def get_fs_params(cl_dic, sel_dic):
+    fs_classifiers = {}
+    for cl_name, (cl_params, cl, cv_set, has_coefs, cl_se_param) in cl_dic.items():
+        for sel_name, (sel_params, sel, sel_se_param) in sel_dic.items():
+            name = "{} - {}".format(sel_name, cl_name)
+            params = {"sel__"+k : v for (k,v) in sel_params.items()}
+            params.update({"cl__"+k : v for (k,v) in cl_params.items()})
+            if sel_se_param is not None:
+                se_param = 'sel__'+sel_se_param
+            else:
+                se_param = 'cl__'+cl_se_param
+            fs_classifiers[name] = params, SelClassifier(sel,cl, has_coefs=has_coefs), cv_set, True, se_param
+    return fs_classifiers
+
+def get_params(ncv_set, cvp_set, ease_score=None):
+    classifiers = get_sparse_classifiers(ncv_set, cvp_set)
+    classifiers.update(get_fs_params(get_non_sparse_classifiers(ncv_set, cvp_set), get_fs_procedures(ease_score=ease_score)))
+    return classifiers
+
