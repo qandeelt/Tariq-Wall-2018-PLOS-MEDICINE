@@ -4,8 +4,11 @@ Code for building ML classifiers described in the paper selected for publication
 The methods used for building these classifiers have been described at length in these papers:
 
 ADT8: From the paper: https://www.nature.com/articles/tp201210
+
 ADT7: http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0043855
+
 SVM-9 and LR-12: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4445756/
+
 LR-5, SVM-5, LR-10, SVM-10: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5735531/ (*)
 
 The new classifier built on video features has been included as a jupyter notebook with detailed comments for each step and can be run by using either of the datasets provided.
