@@ -11,7 +11,7 @@ SVM-9 and LR-12: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4445756/
 
 LR-5, SVM-5, LR-10, SVM-10: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5735531/ (*)
 
-The new classifier built on video features has been included as a jupyter notebook with detailed comments for each step and can be run by using either of the datasets provided.
+LR-VF: Detailed jupyter notebook provided and steps to run it described below.
 
 Datasets:
 1. The primary dataset includes the videos used for the initial validation of the 8 classifiers to pick the top performing ones out of those  which were then validated on (2). This dataset was also used to construct the video feature classifier.
@@ -25,4 +25,7 @@ gender: gender of the child
 
 2. The validation dataset was used to re-validate the results of top performing historic classifiers and also validate the new video feature classifier which was trained and tested on the primaary dataset.
 
-*extensive code for these classifiers (which include our top performing classifier LR-5) has been provided. We recommend using the jupyter notebook to train the models on the given datasets (m1/m2) and test on the primary dataset or validation dataset. We conducted further analysis by taking the results from the test and reaching a final consensus by taking a majority-rules approach for each case.
+Code:
+1. In order to run our top perforiming classifier LR-5, please run the jupyter notebook called "RUNME_LR_5" in the LR-5 folder. This will return classifications for each (video, rater) pair. We did further analysis on it by picking an overall classification of each video using majority rules and caalculating results accordingly.
+
+2. In order to run the  video feature classifier, LR-VF, please run the jupyter notebook called "LR_VF" which walks through the methods used to construct the classifier.
