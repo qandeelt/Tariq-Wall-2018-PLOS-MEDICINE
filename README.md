@@ -26,8 +26,6 @@ gender: gender of the child
 2. The validation dataset was used to re-validate the results of top performing historic classifiers and also validate the new video feature classifier which was trained and tested on the primaary dataset.
 
 Code:
-1. In order to run our top perforiming classifier LR-5, please run the jupyter notebook called "RUNME_LR_5" in the LR-5 folder. This will return classifications for each (video, rater) pair. We did further analysis on it by picking an overall classification of each video using majority rules and caalculating results accordingly.
-
-2. In order to run the  video feature classifier, LR-VF, please run the jupyter notebook called "LR_VF" which walks through the methods used to construct the classifier.
+The code for the classifiers is given in the folders called "Video ML models" (model validated on video features) and "Video Feature Classifier" (model developed on video features). Each of the folders contain instructions on how to run the classifier. 
 
 For further questions, please contact the-wall-lab@stanford.edu.
